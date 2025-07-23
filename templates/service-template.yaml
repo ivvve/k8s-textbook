@@ -1,0 +1,51 @@
+# Basic Service Template
+apiVersion: v1
+kind: Service
+metadata:
+  name: <SERVICE_NAME>
+  labels:
+    app: <APP_NAME>
+spec:
+  type: <SERVICE_TYPE>  # ClusterIP, NodePort, LoadBalancer
+  ports:
+  - port: <SERVICE_PORT>
+    targetPort: <TARGET_PORT>
+    protocol: TCP
+    name: <PORT_NAME>
+  selector:
+    app: <APP_NAME>
+
+---
+# NodePort Service Example
+apiVersion: v1
+kind: Service
+metadata:
+  name: <SERVICE_NAME>-nodeport
+  labels:
+    app: <APP_NAME>
+spec:
+  type: NodePort
+  ports:
+  - port: <SERVICE_PORT>
+    targetPort: <TARGET_PORT>
+    nodePort: <NODE_PORT>  # 30000-32767
+    protocol: TCP
+  selector:
+    app: <APP_NAME>
+
+---
+# LoadBalancer Service Example
+apiVersion: v1
+kind: Service
+metadata:
+  name: <SERVICE_NAME>-lb
+  labels:
+    app: <APP_NAME>
+spec:
+  type: LoadBalancer
+  ports:
+  - port: <SERVICE_PORT>
+    targetPort: <TARGET_PORT>
+    protocol: TCP
+  selector:
+    app: <APP_NAME>

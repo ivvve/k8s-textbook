@@ -1,0 +1,45 @@
+# Basic Deployment Template
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: <DEPLOYMENT_NAME>
+  labels:
+    app: <APP_NAME>
+spec:
+  replicas: <REPLICA_COUNT>
+  selector:
+    matchLabels:
+      app: <APP_NAME>
+  template:
+    metadata:
+      labels:
+        app: <APP_NAME>
+        version: <VERSION>
+    spec:
+      containers:
+      - name: <CONTAINER_NAME>
+        image: <IMAGE>:<TAG>
+        ports:
+        - containerPort: <PORT>
+        env:
+        - name: <ENV_VAR_NAME>
+          value: "<ENV_VAR_VALUE>"
+        resources:
+          requests:
+            memory: "<MEMORY_REQUEST>"
+            cpu: "<CPU_REQUEST>"
+          limits:
+            memory: "<MEMORY_LIMIT>"
+            cpu: "<CPU_LIMIT>"
+        livenessProbe:
+          httpGet:
+            path: <HEALTH_CHECK_PATH>
+            port: <PORT>
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: <READY_CHECK_PATH>
+            port: <PORT>
+          initialDelaySeconds: 5
+          periodSeconds: 5
