@@ -28,31 +28,31 @@ A comprehensive, hands-on textbook for learning Kubernetes from scratch using mi
 ## 📖 Table of Contents
 
 ### Part I: Foundation
-- **[Chapter 1: Introduction to Kubernetes](./chapters/01-introduction/)** - Understanding what Kubernetes is and why we need container orchestration
-- **[Chapter 2: Setting Up Your Environment](./chapters/02-setup/)** - Installing Docker, minikube, and kubectl
+- **[Chapter 1: Introduction to Kubernetes](./chapters/01-introduction.md)** - Understanding what Kubernetes is and why we need container orchestration
+- **[Chapter 2: Setting Up Your Environment](./chapters/02-setup.md)** - Installing Docker, minikube, and kubectl
 
 ### Part II: Core Concepts
-- **[Chapter 3: Your First Pod](./chapters/03-first-pod/)** - Understanding and creating Pods with practical examples
-- **[Chapter 4: Services and Networking](./chapters/04-services/)** - Exposing applications and understanding Kubernetes networking
-- **[Chapter 5: Deployments and ReplicaSets](./chapters/05-deployments/)** - Managing application lifecycle, scaling, and updates
+- **[Chapter 3: Your First Pod](./chapters/03-first-pod.md)** - Understanding and creating Pods with practical examples
+- **[Chapter 4: Services and Networking](./chapters/04-services.md)** - Exposing applications and understanding Kubernetes networking
+- **[Chapter 5: Deployments and ReplicaSets](./chapters/05-deployments.md)** - Managing application lifecycle, scaling, and updates
 
 ### Part III: Configuration and Storage
-- **[Chapter 6: ConfigMaps and Secrets](./chapters/06-config-secrets/)** - Managing configuration data and sensitive information
-- **[Chapter 7: Persistent Volumes and Storage](./chapters/07-storage/)** - Understanding storage in Kubernetes
+- **[Chapter 6: ConfigMaps and Secrets](./chapters/06-config-secrets.md)** - Managing configuration data and sensitive information
+- **[Chapter 7: Persistent Volumes and Storage](./chapters/07-storage.md)** - Understanding storage in Kubernetes
 
 ### Part IV: Advanced Concepts
-- **[Chapter 8: Namespaces and Resource Management](./chapters/08-namespaces/)** - Organizing resources and managing multi-environment setups
-- **[Chapter 9: Ingress and Load Balancing](./chapters/09-ingress/)** - Advanced networking and traffic routing
-- **[Chapter 10: Health Checks and Monitoring](./chapters/10-monitoring/)** - Ensuring application reliability and observability
+- **[Chapter 8: Namespaces and Resource Management](./chapters/08-namespaces.md)** - Organizing resources and managing multi-environment setups
+- **[Chapter 9: Ingress and Load Balancing](./chapters/09-ingress.md)** - Advanced networking and traffic routing
+- **[Chapter 10: Health Checks and Monitoring](./chapters/10-monitoring.md)** - Ensuring application reliability and observability
 
 ### Part V: Real-World Applications
-- **[Chapter 11: Multi-Tier Application Deployment](./chapters/11-multi-tier/)** - Deploying complete application stacks
-- **[Chapter 12: CI/CD with Kubernetes](./chapters/12-cicd/)** - Automated deployment pipelines and GitOps basics
+- **[Chapter 11: Multi-Tier Application Deployment](./chapters/11-multi-tier.md)** - Deploying complete application stacks
+- **[Chapter 12: CI/CD with Kubernetes](./chapters/12-cicd.md)** - Automated deployment pipelines and GitOps basics
 
 ### Part VI: Troubleshooting and Best Practices
-- **[Chapter 13: Debugging and Troubleshooting](./chapters/13-debugging/)** - Common issues, solutions, and debugging techniques
-- **[Chapter 14: Security Best Practices](./chapters/14-security/)** - Kubernetes security fundamentals and RBAC
-- **[Chapter 15: Production Readiness](./chapters/15-production/)** - Moving beyond minikube and production considerations
+- **[Chapter 13: Debugging and Troubleshooting](./chapters/13-debugging.md)** - Common issues, solutions, and debugging techniques
+- **[Chapter 14: Security Best Practices](./chapters/14-security.md)** - Kubernetes security fundamentals and RBAC
+- **[Chapter 15: Production Readiness](./chapters/15-production.md)** - Moving beyond minikube and production considerations
 
 ### Appendices
 - **[Appendix A: kubectl Command Reference](./appendices/kubectl-reference.md)**
