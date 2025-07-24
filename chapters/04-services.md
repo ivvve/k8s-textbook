@@ -714,89 +714,62 @@ kubectl run dns-debug --image=busybox -it --rm -- /bin/sh
 
 ## Practical Examples
 
-### Example 1: Multi-Tier Application
+### Practical WordPress + MySQL
 
-Create a complete web application with frontend and backend services:
+This example demonstrates real-world Service usage:
+- **WordPress** (NodePort - Public access for users)
+- **MySQL** (ClusterIP - Internal database, not accessible externally)
 
-```yaml
-# Backend deployment and service
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: backend
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: backend
-  template:
-    metadata:
-      labels:
-        app: backend
-    spec:
-      containers:
-      - name: backend
-        image: nginx:1.21
-        ports:
-        - containerPort: 80
-
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: backend-service
-spec:
-  selector:
-    app: backend
-  ports:
-  - port: 80
-    targetPort: 80
-  type: ClusterIP
-
----
-# Frontend deployment and service
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: frontend
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: frontend
-  template:
-    metadata:
-      labels:
-        app: frontend
-    spec:
-      containers:
-      - name: frontend
-        image: nginx:1.21
-        ports:
-        - containerPort: 80
-
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: frontend-service
-spec:
-  selector:
-    app: frontend
-  ports:
-  - port: 80
-    targetPort: 80
-    nodePort: 30080
-  type: NodePort
+```mermaid
+graph TB
+    subgraph "External Network"
+        Users[Website Visitors<br/>Port 30080]
+        Admin[WordPress Admin<br/>Port 30080/wp-admin]
+    end
+    
+    subgraph "Kubernetes Cluster"
+        subgraph "Public Access (NodePort)"
+            WPService[wordpress-service<br/>NodePort: 30080<br/>Public Website]
+        end
+        
+        subgraph "Internal Only (ClusterIP)"
+            MySQLService[mysql-service<br/>ClusterIP: 10.96.1.100<br/>Database Access Only]
+        end
+        
+        subgraph "Pods"
+            WPPod[WordPress Pod<br/>Apache + PHP<br/>Port 80]
+            MySQLPod[MySQL Pod<br/>Database<br/>Port 3306]
+        end
+    end
+    
+    Users --> WPService
+    Admin --> WPService
+    WPService --> WPPod
+    MySQLService --> MySQLPod
+    
+    WPPod -.->|mysql-service:3306<br/>Internal DB Connection| MySQLService
+    
+    style WPService fill:#e3f2fd
+    style MySQLService fill:#e8f5e8
+    style MySQLPod fill:#ffcdd2
 ```
 
-### Example 2: Database Service
+**Architecture Benefits:**
+- **Security**: Database not accessible from outside
+- **Performance**: Direct internal communication
+- **Scalability**: Can scale WordPress pods independently
+- **Real-world**: Mirrors production setups
+
+Create the complete WordPress application:
 
 ```yaml
+# MySQL Database (ClusterIP - Internal Only)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: mysql
+  labels:
+    app: mysql
 spec:
   replicas: 1
   selector:
@@ -812,23 +785,153 @@ spec:
         image: mysql:8.0
         env:
         - name: MYSQL_ROOT_PASSWORD
-          value: "password123"
+          value: "rootpassword"
+        - name: MYSQL_DATABASE
+          value: "wordpress"
+        - name: MYSQL_USER
+          value: "wpuser"
+        - name: MYSQL_PASSWORD
+          value: "wppassword"
         ports:
         - containerPort: 3306
+        volumeMounts:
+        - name: mysql-storage
+          mountPath: /var/lib/mysql
+      volumes:
+      - name: mysql-storage
+        emptyDir: {}
 
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: mysql-service
+  labels:
+    app: mysql
 spec:
   selector:
     app: mysql
   ports:
-  - port: 3306
+  - port: 13306
     targetPort: 3306
-  type: ClusterIP
+  type: ClusterIP  # Internal only - not accessible from outside
+
+---
+# WordPress Application (NodePort - Public Access)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress
+  labels:
+    app: wordpress
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: wordpress
+  template:
+    metadata:
+      labels:
+        app: wordpress
+    spec:
+      containers:
+      - name: wordpress
+        image: wordpress:6.3-apache
+        env:
+        - name: WORDPRESS_DB_HOST
+          value: "mysql-service:13306"  # Service DNS name
+        - name: WORDPRESS_DB_NAME
+          value: "wordpress"
+        - name: WORDPRESS_DB_USER
+          value: "wpuser"
+        - name: WORDPRESS_DB_PASSWORD
+          value: "wppassword"
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: wordpress-storage
+          mountPath: /var/www/html
+      volumes:
+      - name: wordpress-storage
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wordpress-service
+  labels:
+    app: wordpress
+spec:
+  selector:
+    app: wordpress
+  ports:
+  - port: 80
+    targetPort: 80
+    nodePort: 30080
+  type: NodePort  # Public access via Node IP:30080
 ```
+
+### Deploying and Testing the WordPress Example
+
+**Step 1: Deploy the Application**
+```bash
+# Save the above YAML as wordpress-mysql.yaml
+kubectl apply -f wordpress-mysql.yaml
+
+# Check deployments
+kubectl get deployments
+kubectl get pods
+kubectl get services
+```
+
+**Step 2: Verify Service Types**
+```bash
+# Check services - notice the different types
+kubectl get services
+
+# Expected output:
+# NAME                TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)          AGE
+# wordpress-service   NodePort    10.96.87.123   <none>        80:30080/TCP     1m
+# mysql-service       ClusterIP   10.96.45.67    <none>        3306/TCP         1m
+```
+
+**Step 3: Test External Access (NodePort)**
+```bash
+# Access WordPress via NodePort
+minikube service wordpress-service --url
+# Or directly: http://$(minikube ip):30080
+
+# Open in browser - you should see WordPress installation
+```
+
+**Step 4: Test Internal Communication**
+```bash
+# Try to access MySQL directly (should fail from outside)
+curl http://$(minikube ip):3306
+# Error: Connection refused - Good! Database is internal only
+
+# Test from inside the cluster
+kubectl run mysql-client --image=mysql:8.0 -it --rm --restart=Never \
+  -- mysql -h mysql-service -u wpuser -p
+
+# Enter password: wppassword
+# You should connect successfully - proving internal communication works
+```
+
+**Step 5: Verify WordPress-MySQL Connection**
+```bash
+# Check WordPress logs to see database connection
+kubectl logs deployment/wordpress
+
+# Look for successful database connection messages
+```
+
+**Key Learning Points:**
+1. **NodePort Service**: WordPress accessible via `<node-ip>:30080`
+2. **ClusterIP Service**: MySQL only accessible via `mysql-service:3306` internally
+3. **Service Discovery**: WordPress finds MySQL using service name `mysql-service`
+4. **Security**: Database protected from external access
 
 ## Best Practices
 
