@@ -22,6 +22,30 @@ In the previous chapter, we learned about Pods. However, Pods have some networki
 
 A **Service** is a Kubernetes object that provides a stable network interface to a set of Pods. Think of it as a "front door" that remains constant even as the Pods behind it change.
 
+```mermaid
+graph TB
+    subgraph "Kubernetes Cluster"
+        Client[Client Request]
+        Service[Service<br/>nginx-service<br/>IP: 10.96.1.100]
+        
+        subgraph "Pods"
+            Pod1[Pod 1<br/>nginx<br/>IP: 10.244.1.10]
+            Pod2[Pod 2<br/>nginx<br/>IP: 10.244.1.11]
+            Pod3[Pod 3<br/>nginx<br/>IP: 10.244.1.12]
+        end
+    end
+    
+    Client --> Service
+    Service --> Pod1
+    Service --> Pod2
+    Service --> Pod3
+    
+    style Service fill:#e1f5fe
+    style Pod1 fill:#f3e5f5
+    style Pod2 fill:#f3e5f5
+    style Pod3 fill:#f3e5f5
+```
+
 ### Key Service Characteristics
 
 1. **Stable IP address**: Services get a consistent IP that doesn't change
@@ -127,6 +151,52 @@ spec:
 
 Kubernetes provides four types of Services, each for different use cases:
 
+```mermaid
+graph TB
+    subgraph "External Network"
+        Internet[Internet/External Users]
+        LB[Load Balancer<br/>External IP: 203.0.113.10]
+    end
+    
+    subgraph "Kubernetes Cluster"
+        subgraph "Node"
+            NodeIP[Node IP: 192.168.1.100<br/>NodePort: 30080]
+        end
+        
+        ClusterIP[ClusterIP Service<br/>10.96.1.100:80<br/>Internal Only]
+        NodePort[NodePort Service<br/>10.96.1.101:80<br/>Also exposes 30080]
+        LoadBalancer[LoadBalancer Service<br/>10.96.1.102:80<br/>Also exposes NodePort]
+        
+        subgraph "Pods"
+            Pod1[Pod 1:80]
+            Pod2[Pod 2:80]
+            Pod3[Pod 3:80]
+        end
+    end
+    
+    Internet --> LB
+    LB --> LoadBalancer
+    Internet -.-> NodeIP
+    NodeIP --> NodePort
+    
+    ClusterIP --> Pod1
+    ClusterIP --> Pod2
+    ClusterIP --> Pod3
+    
+    NodePort --> Pod1
+    NodePort --> Pod2
+    NodePort --> Pod3
+    
+    LoadBalancer --> Pod1
+    LoadBalancer --> Pod2
+    LoadBalancer --> Pod3
+    
+    style ClusterIP fill:#e8f5e8
+    style NodePort fill:#fff3e0
+    style LoadBalancer fill:#f3e5f5
+    style LB fill:#ffebee
+```
+
 ### 1. ClusterIP (Default)
 
 **Purpose**: Internal cluster communication only
@@ -155,6 +225,67 @@ spec:
 
 **Purpose**: Expose service on each Node's IP at a static port
 **Access**: Accessible from outside the cluster via `<NodeIP>:<NodePort>`
+
+```mermaid
+graph TB
+    subgraph "External Network"
+        Client1[External Client 1]
+        Client2[External Client 2]
+        Client3[External Client 3]
+    end
+    
+    subgraph "Kubernetes Cluster"
+        subgraph "Master Node"
+            Master[Control Plane<br/>192.168.1.100]
+        end
+        
+        subgraph "Worker Node 1"
+            Node1[Node IP: 192.168.1.101<br/>NodePort: 30080 OPEN]
+        end
+        
+        subgraph "Worker Node 2"
+            Node2[Node IP: 192.168.1.102<br/>NodePort: 30080 OPEN]
+        end
+        
+        subgraph "Worker Node 3"
+            Node3[Node IP: 192.168.1.103<br/>NodePort: 30080 OPEN]
+        end
+        
+        Service[NodePort Service<br/>nginx-nodeport<br/>ClusterIP: 10.96.1.100<br/>Port: 80 → NodePort: 30080]
+        
+        subgraph "Pods (can be on any node)"
+            Pod1[nginx Pod 1<br/>10.244.1.10:80]
+            Pod2[nginx Pod 2<br/>10.244.2.11:80]
+            Pod3[nginx Pod 3<br/>10.244.3.12:80]
+        end
+    end
+    
+    Client1 -->|192.168.1.101:30080| Node1
+    Client2 -->|192.168.1.102:30080| Node2
+    Client3 -->|192.168.1.103:30080| Node3
+    
+    Node1 --> Service
+    Node2 --> Service
+    Node3 --> Service
+    
+    Service --> Pod1
+    Service --> Pod2
+    Service --> Pod3
+    
+    style Service fill:#fff3e0
+    style Node1 fill:#e3f2fd
+    style Node2 fill:#e3f2fd
+    style Node3 fill:#e3f2fd
+    style Pod1 fill:#f3e5f5
+    style Pod2 fill:#f3e5f5
+    style Pod3 fill:#f3e5f5
+```
+
+**Key NodePort Characteristics**:
+- **Same port on all nodes**: Port 30080 is opened on ALL worker nodes
+- **Any node access**: Traffic to any node IP:30080 reaches the same service
+- **Load balancing**: kube-proxy distributes traffic across all pods
+- **Port range**: 30000-32767 (can be configured)
 
 ```yaml
 apiVersion: v1
@@ -333,6 +464,41 @@ For the default namespace:
 - Full name: `nginx-service.default.svc.cluster.local`
 - Short name: `nginx-service` (from same namespace)
 
+```mermaid
+graph TB
+    subgraph "Kubernetes Cluster"
+        subgraph "CoreDNS"
+            DNS[CoreDNS Service<br/>Handles DNS Resolution]
+        end
+        
+        subgraph "Pod making request"
+            App[Application Pod<br/>wants to connect to<br/>nginx-service]
+        end
+        
+        subgraph "Services"
+            Service1[nginx-service<br/>nginx-service.default.svc.cluster.local<br/>IP: 10.96.1.100]
+            Service2[mysql-service<br/>mysql-service.default.svc.cluster.local<br/>IP: 10.96.1.101]
+        end
+        
+        subgraph "Target Pods"
+            Pod1[nginx Pod 1]
+            Pod2[nginx Pod 2]
+            Pod3[mysql Pod]
+        end
+    end
+    
+    App -->|"1. DNS lookup<br/>nginx-service"| DNS
+    DNS -->|"2. Returns IP<br/>10.96.1.100"| App
+    App -->|"3. HTTP request<br/>to 10.96.1.100"| Service1
+    Service1 --> Pod1
+    Service1 --> Pod2
+    
+    style DNS fill:#e1f5fe
+    style App fill:#fff3e0
+    style Service1 fill:#e8f5e8
+    style Service2 fill:#e8f5e8
+```
+
 ### Testing Service Discovery
 
 ```bash
@@ -371,6 +537,31 @@ kubectl describe endpoints nginx-service
 2. **Endpoint Creation**: Kubernetes creates Endpoint objects with Pod IPs
 3. **Traffic Routing**: kube-proxy routes traffic to healthy endpoints
 4. **Load Balancing**: Traffic is distributed across available endpoints
+
+```mermaid
+flowchart TD
+    subgraph "Service Discovery Process"
+        A[Service Created<br/>selector: app=nginx] --> B[Kubernetes API Server<br/>watches for Pods]
+        B --> C[Find Pods with<br/>label app=nginx]
+        C --> D[Create Endpoints<br/>with Pod IPs]
+        D --> E[kube-proxy updates<br/>iptables/IPVS rules]
+        E --> F[Traffic routing<br/>configured]
+    end
+    
+    subgraph "Traffic Flow"
+        G[Client Request<br/>to Service IP] --> H[kube-proxy<br/>load balances]
+        H --> I[Pod 1<br/>10.244.1.10]
+        H --> J[Pod 2<br/>10.244.1.11]
+        H --> K[Pod 3<br/>10.244.1.12]
+    end
+    
+    F --> G
+    
+    style A fill:#e1f5fe
+    style D fill:#e8f5e8
+    style G fill:#fff3e0
+    style H fill:#f3e5f5
+```
 
 ### Viewing Service Details
 
@@ -595,11 +786,8 @@ spec:
   ports:
   - port: 80
     targetPort: 80
-  type: NodePort
-  ports:
-  - port: 80
-    targetPort: 80
     nodePort: 30080
+  type: NodePort
 ```
 
 ### Example 2: Database Service
