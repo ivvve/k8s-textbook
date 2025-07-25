@@ -287,30 +287,498 @@ spec:
 
 ## Deployment Strategies
 
+Kubernetes offers different deployment strategies to handle application updates. Understanding these strategies is crucial for maintaining application availability and controlling the update process.
+
 ### 1. Rolling Update (Default)
 
-Gradually replace old Pods with new ones:
+The rolling update strategy gradually replaces old Pods with new ones, ensuring continuous availability.
+
+#### Basic Rolling Update Configuration
 
 ```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rolling-update-demo
 spec:
+  replicas: 5
   strategy:
     type: RollingUpdate
     rollingUpdate:
       maxUnavailable: 1      # Max Pods that can be unavailable
       maxSurge: 1           # Max Pods above desired replica count
+  selector:
+    matchLabels:
+      app: rolling-demo
+  template:
+    metadata:
+      labels:
+        app: rolling-demo
+    spec:
+      containers:
+      - name: app
+        image: nginx:1.21
+        ports:
+        - containerPort: 80
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 3
+```
+
+#### Advanced Rolling Update Configurations
+
+**Zero-downtime deployment for single replica:**
+```yaml
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0      # Never take down the only Pod
+      maxSurge: 1           # Allow one extra Pod during update
+```
+
+**Conservative update (slow and steady):**
+```yaml
+spec:
+  replicas: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1      # Only 1 Pod down at a time
+      maxSurge: 1           # Only 1 extra Pod at a time
+```
+
+**Aggressive update (faster deployment):**
+```yaml
+spec:
+  replicas: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%    # Up to 25% of Pods can be down
+      maxSurge: 25%         # Up to 25% extra Pods allowed
+```
+
+#### Rolling Update Process Visualization
+
+```
+Initial State:  [V1] [V1] [V1] [V1] [V1]    (5 replicas)
+
+Step 1:         [V1] [V1] [V1] [V1] [V1] [V2]  (maxSurge: +1)
+Step 2:         [V1] [V1] [V1] [V1] [V2]       (terminate 1 old)
+Step 3:         [V1] [V1] [V1] [V1] [V2] [V2]  (add 1 new)
+Step 4:         [V1] [V1] [V1] [V2] [V2]       (terminate 1 old)
+...
+Final State:    [V2] [V2] [V2] [V2] [V2]       (all updated)
 ```
 
 ### 2. Recreate Strategy
 
-Terminate all old Pods before creating new ones:
+Terminates all existing Pods before creating new ones. This causes downtime but ensures no version mixing.
 
 ```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recreate-demo
 spec:
+  replicas: 3
   strategy:
     type: Recreate
+  selector:
+    matchLabels:
+      app: recreate-demo
+  template:
+    metadata:
+      labels:
+        app: recreate-demo
+    spec:
+      containers:
+      - name: app
+        image: nginx:1.21
+        ports:
+        - containerPort: 80
 ```
 
-**Note**: This causes downtime but ensures no mixed versions.
+#### When to Use Recreate Strategy
+
+- **Database migrations**: When you need to ensure no old version remains
+- **Shared resources**: Applications that can't run multiple versions simultaneously
+- **Development/testing**: When downtime is acceptable
+- **Resource constraints**: When you can't afford extra Pods during updates
+
+#### Recreate Process Visualization
+
+```
+Initial State:  [V1] [V1] [V1]
+Terminating:    [ ]  [ ]  [ ]    (all Pods terminated)
+Creating:       [V2] [V2] [V2]   (new Pods created)
+```
+
+### 3. Blue-Green Deployment Strategy
+
+While not directly supported by Kubernetes Deployments, you can implement blue-green deployments using multiple Deployments and Services.
+
+#### Blue-Green Setup
+
+```yaml
+# Blue Deployment (current version)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-blue
+  labels:
+    version: blue
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: myapp
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: myapp
+        version: blue
+    spec:
+      containers:
+      - name: app
+        image: nginx:1.21
+        ports:
+        - containerPort: 80
+
+---
+# Green Deployment (new version)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-green
+  labels:
+    version: green
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: myapp
+      version: green
+  template:
+    metadata:
+      labels:
+        app: myapp
+        version: green
+    spec:
+      containers:
+      - name: app
+        image: nginx:1.22
+        ports:
+        - containerPort: 80
+
+---
+# Service (switch between blue and green)
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service
+spec:
+  selector:
+    app: myapp
+    version: blue  # Switch to 'green' for deployment
+  ports:
+  - port: 80
+    targetPort: 80
+```
+
+#### Blue-Green Deployment Commands
+
+```bash
+# Deploy green version
+kubectl apply -f app-green-deployment.yaml
+
+# Verify green deployment is ready
+kubectl get pods -l version=green
+
+# Switch traffic to green
+kubectl patch service app-service -p '{"spec":{"selector":{"version":"green"}}}'
+
+# Verify the switch
+kubectl get service app-service -o yaml
+
+# Clean up blue deployment (after verification)
+kubectl delete deployment app-blue
+```
+
+### 4. Canary Deployment Strategy
+
+Gradually shift traffic from old to new version by controlling the number of replicas.
+
+#### Canary Deployment Example
+
+```yaml
+# Main deployment (90% of traffic)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-main
+spec:
+  replicas: 9
+  selector:
+    matchLabels:
+      app: myapp
+      track: stable
+  template:
+    metadata:
+      labels:
+        app: myapp
+        track: stable
+    spec:
+      containers:
+      - name: app
+        image: nginx:1.21
+        ports:
+        - containerPort: 80
+
+---
+# Canary deployment (10% of traffic)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-canary
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: myapp
+      track: canary
+  template:
+    metadata:
+      labels:
+        app: myapp
+        track: canary
+    spec:
+      containers:
+      - name: app
+        image: nginx:1.22  # New version
+        ports:
+        - containerPort: 80
+
+---
+# Service routes to both deployments
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service
+spec:
+  selector:
+    app: myapp  # Matches both stable and canary
+  ports:
+  - port: 80
+    targetPort: 80
+```
+
+#### Canary Deployment Progression
+
+```bash
+# Start with canary (10% traffic)
+kubectl apply -f canary-deployment.yaml
+
+# Monitor canary performance
+kubectl get pods -l track=canary
+kubectl logs -l track=canary
+
+# Increase canary traffic (20%)
+kubectl scale deployment app-canary --replicas=2
+kubectl scale deployment app-main --replicas=8
+
+# Further increase (50%)
+kubectl scale deployment app-canary --replicas=5
+kubectl scale deployment app-main --replicas=5
+
+# Complete rollout (100% canary)
+kubectl scale deployment app-canary --replicas=10
+kubectl scale deployment app-main --replicas=0
+
+# Clean up old deployment
+kubectl delete deployment app-main
+```
+
+### 5. Advanced Rollout Control
+
+Kubernetes provides advanced options to control the rollout process.
+
+#### Rollout Configuration with Timing
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controlled-rollout
+spec:
+  replicas: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 2
+      maxSurge: 2
+  minReadySeconds: 30        # Wait 30s before considering Pod ready
+  progressDeadlineSeconds: 300  # Rollout timeout (5 minutes)
+  selector:
+    matchLabels:
+      app: controlled-app
+  template:
+    metadata:
+      labels:
+        app: controlled-app
+    spec:
+      containers:
+      - name: app
+        image: nginx:1.21
+        ports:
+        - containerPort: 80
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          successThreshold: 2    # Must succeed twice
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+```
+
+#### Manual Rollout Control
+
+```bash
+# Pause a rollout
+kubectl rollout pause deployment/myapp
+
+# Check rollout status
+kubectl rollout status deployment/myapp
+
+# Resume rollout
+kubectl rollout resume deployment/myapp
+
+# Restart rollout (force update without changing image)
+kubectl rollout restart deployment/myapp
+```
+
+### 6. Rollout Annotations and Change Cause
+
+Track deployment changes with annotations:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: annotated-deployment
+  annotations:
+    deployment.kubernetes.io/revision: "3"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+      annotations:
+        # This annotation is recorded in rollout history
+        kubernetes.io/change-cause: "Update to nginx 1.22 for security patch"
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.22
+        ports:
+        - containerPort: 80
+```
+
+```bash
+# Set change cause when updating
+kubectl set image deployment/myapp nginx=nginx:1.22 \
+  --record=true \
+  --annotations="kubernetes.io/change-cause=Security update to nginx 1.22"
+
+# View detailed history with change causes
+kubectl rollout history deployment/myapp
+kubectl rollout history deployment/myapp --revision=3
+```
+
+### 7. Strategy Selection Guide
+
+| Strategy | Downtime | Resource Usage | Complexity | Use Case |
+|----------|----------|----------------|------------|----------|
+| **Rolling Update** | None | Low | Low | Most applications, default choice |
+| **Recreate** | Yes | Lowest | Lowest | Stateful apps, databases |
+| **Blue-Green** | None | Highest | Medium | Critical apps, instant rollback needed |
+| **Canary** | None | Medium | High | Risk-averse updates, A/B testing |
+
+### 8. Testing Deployment Strategies
+
+#### Create Test Deployment
+
+```yaml
+# test-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: strategy-test
+spec:
+  replicas: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: strategy-test
+  template:
+    metadata:
+      labels:
+        app: strategy-test
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.21
+        ports:
+        - containerPort: 80
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 2
+```
+
+#### Test Commands
+
+```bash
+# Deploy initial version
+kubectl apply -f test-deployment.yaml
+
+# Watch pods in real-time
+kubectl get pods -l app=strategy-test -w
+
+# In another terminal, trigger update
+kubectl set image deployment/strategy-test nginx=nginx:1.22
+
+# Monitor the rollout
+kubectl rollout status deployment/strategy-test
+
+# Check replica sets
+kubectl get replicasets -l app=strategy-test
+
+# Test rollback
+kubectl rollout undo deployment/strategy-test
+```
 
 ## Advanced Deployment Features
 

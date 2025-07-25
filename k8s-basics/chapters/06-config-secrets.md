@@ -362,181 +362,263 @@ spec:
       secretName: db-credentials-easy
 ```
 
-## Practical Example: Web Application with Configuration
+## Practical Example: WordPress + MySQL with ConfigMaps and Secrets
 
-Let's create a complete example with a web application that uses both ConfigMaps and Secrets.
+Let's enhance the WordPress + MySQL example from Chapter 4 by properly managing configuration with ConfigMaps and Secrets. This demonstrates how to externalize database configuration and credentials.
 
-### Step 1: Create ConfigMap for Application Settings
+### Why Use ConfigMaps and Secrets Here?
 
-Create `webapp-config.yaml`:
+In Chapter 4, we hardcoded database configuration directly in the Deployment YAML:
+- Database host, port, and name were hardcoded as environment variables
+- Passwords were embedded in plain text in the YAML files
+
+This approach has problems:
+- **Security risk**: Passwords visible in YAML files
+- **Inflexibility**: Need to edit YAML files to change configuration
+- **Environment coupling**: Same YAML can't work across dev/staging/prod
+
+### Step 1: Create ConfigMap for Database Configuration
+
+Create `wordpress-config.yaml`:
 
 ```yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: webapp-config
+  name: wordpress-config
 data:
-  app_name: "My Web Application"
-  environment: "production"
-  log_level: "info"
-  max_connections: "100"
-  timeout_seconds: "30"
-  feature_flags: |
-    {
-      "new_ui": true,
-      "beta_features": false,
-      "maintenance_mode": false
-    }
-  nginx.conf: |
-    events {
-        worker_connections 1024;
-    }
-    http {
-        upstream backend {
-            server backend-service:8080;
-        }
-        server {
-            listen 80;
-            location / {
-                proxy_pass http://backend;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-            }
-        }
-    }
+  # Database connection settings (non-sensitive)
+  db_host: "mysql-service"
+  db_port: "3306"
+  db_name: "wordpress"
+  # WordPress application settings
+  wp_debug: "false"
+  upload_max_filesize: "64M"
+  memory_limit: "256M"
 ```
 
 ### Step 2: Create Secret for Database Credentials
 
-Create `webapp-secrets.yaml`:
+Create `wordpress-secrets.yaml`:
 
 ```yaml
 apiVersion: v1
 kind: Secret
 metadata:
-  name: webapp-secrets
+  name: wordpress-secrets
 type: Opaque
 stringData:
-  db_username: webapp_user
-  db_password: super_secret_password_123
-  jwt_secret: jwt_signing_key_xyz789
-  api_key: external_api_key_abc123
+  # MySQL credentials
+  mysql_root_password: "rootpassword123"
+  mysql_user: "wpuser"
+  mysql_password: "wppassword456"
+  # WordPress database credentials (must match MySQL)
+  db_user: "wpuser"
+  db_password: "wppassword456"
 ```
 
-### Step 3: Create Deployment Using ConfigMap and Secret
+### Step 3: Create Updated Deployments Using ConfigMaps and Secrets
 
-Create `webapp-deployment.yaml`:
+Now let's update our WordPress and MySQL deployments to use ConfigMaps and Secrets instead of hardcoded values.
+
+Create `wordpress-mysql-with-config.yaml`:
 
 ```yaml
+# MySQL Deployment using ConfigMap and Secrets
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: webapp-deployment
+  name: mysql
+  labels:
+    app: mysql
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
-      app: webapp
+      app: mysql
   template:
     metadata:
       labels:
-        app: webapp
+        app: mysql
     spec:
       containers:
-      - name: webapp
-        image: nginx:1.21
+      - name: mysql
+        image: mysql:8.0
+        env:
+        # Database configuration from ConfigMap
+        - name: MYSQL_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: wordpress-config
+              key: db_name
+        # Sensitive data from Secrets
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: wordpress-secrets
+              key: mysql_root_password
+        - name: MYSQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: wordpress-secrets
+              key: mysql_user
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: wordpress-secrets
+              key: mysql_password
+        ports:
+        - containerPort: 3306
+        volumeMounts:
+        - name: mysql-storage
+          mountPath: /var/lib/mysql
+      volumes:
+      - name: mysql-storage
+        emptyDir: {}
+
+---
+# WordPress Deployment using ConfigMap and Secrets
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress
+  labels:
+    app: wordpress
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: wordpress
+  template:
+    metadata:
+      labels:
+        app: wordpress
+    spec:
+      containers:
+      - name: wordpress
+        image: wordpress:6.3-apache
+        env:
+        # Database connection from ConfigMap (non-sensitive)
+        - name: WORDPRESS_DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: wordpress-config
+              key: db_host
+        - name: WORDPRESS_DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: wordpress-config
+              key: db_name
+        # Database credentials from Secrets
+        - name: WORDPRESS_DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: wordpress-secrets
+              key: db_user
+        - name: WORDPRESS_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: wordpress-secrets
+              key: db_password
+        # WordPress configuration from ConfigMap
+        - name: WORDPRESS_DEBUG
+          valueFrom:
+            configMapKeyRef:
+              name: wordpress-config
+              key: wp_debug
         ports:
         - containerPort: 80
-        env:
-        # Environment variables from ConfigMap
-        - name: APP_NAME
-          valueFrom:
-            configMapKeyRef:
-              name: webapp-config
-              key: app_name
-        - name: ENVIRONMENT
-          valueFrom:
-            configMapKeyRef:
-              name: webapp-config
-              key: environment
-        - name: LOG_LEVEL
-          valueFrom:
-            configMapKeyRef:
-              name: webapp-config
-              key: log_level
-        # Environment variables from Secret
-        - name: DB_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: webapp-secrets
-              key: db_username
-        - name: DB_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: webapp-secrets
-              key: db_password
-        - name: JWT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: webapp-secrets
-              key: jwt_secret
         volumeMounts:
-        # Mount nginx config from ConfigMap
-        - name: nginx-config
-          mountPath: /etc/nginx/nginx.conf
-          subPath: nginx.conf
-        # Mount feature flags from ConfigMap
-        - name: app-config
-          mountPath: /etc/app-config
-        # Mount sensitive files from Secret
-        - name: secret-files
-          mountPath: /etc/secrets
-          readOnly: true
+        - name: wordpress-storage
+          mountPath: /var/www/html
       volumes:
-      - name: nginx-config
-        configMap:
-          name: webapp-config
-      - name: app-config
-        configMap:
-          name: webapp-config
-          items:
-          - key: feature_flags
-            path: features.json
-      - name: secret-files
-        secret:
-          secretName: webapp-secrets
+      - name: wordpress-storage
+        emptyDir: {}
+
+---
+# Services (same as Chapter 4)
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-service
+  labels:
+    app: mysql
+spec:
+  selector:
+    app: mysql
+  ports:
+  - port: 3306
+    targetPort: 3306
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wordpress-service
+  labels:
+    app: wordpress
+spec:
+  selector:
+    app: wordpress
+  ports:
+  - port: 80
+    targetPort: 80
+    nodePort: 30080
+  type: NodePort
 ```
 
 ### Step 4: Deploy Everything
 
 ```bash
-# Create ConfigMap and Secret
-kubectl apply -f webapp-config.yaml
-kubectl apply -f webapp-secrets.yaml
+# Create ConfigMap and Secrets first
+kubectl apply -f wordpress-config.yaml
+kubectl apply -f wordpress-secrets.yaml
 
-# Create Deployment
-kubectl apply -f webapp-deployment.yaml
+# Create Deployments and Services
+kubectl apply -f wordpress-mysql-with-config.yaml
 
 # Verify everything is running
 kubectl get configmaps
 kubectl get secrets
 kubectl get deployments
+kubectl get services
 kubectl get pods
 ```
 
 ### Step 5: Verify Configuration
 
 ```bash
-# Check environment variables in a pod
-kubectl exec -it deployment/webapp-deployment -- env | grep -E "(APP_NAME|DB_USERNAME|LOG_LEVEL)"
+# Check environment variables in MySQL pod
+kubectl exec -it deployment/mysql -- env | grep -E "(MYSQL_DATABASE|MYSQL_USER)"
 
-# Check mounted files
-kubectl exec -it deployment/webapp-deployment -- ls -la /etc/app-config/
-kubectl exec -it deployment/webapp-deployment -- cat /etc/app-config/features.json
+# Check environment variables in WordPress pod  
+kubectl exec -it deployment/wordpress -- env | grep -E "(WORDPRESS_DB_HOST|WORDPRESS_DB_NAME|WORDPRESS_DEBUG)"
 
-# Check secret files (be careful in production!)
-kubectl exec -it deployment/webapp-deployment -- ls -la /etc/secrets/
+# Test the application
+minikube service wordpress-service --url
 ```
+
+### Key Benefits of This Approach
+
+**Security Improvements:**
+- Passwords are stored in Secrets (base64 encoded, not plain text)
+- ConfigMaps contain only non-sensitive configuration
+- Secrets can be managed separately with different access controls
+
+**Flexibility:**
+- Database host can be changed without rebuilding images
+- Different environments can use different ConfigMaps/Secrets
+- Configuration updates don't require code changes
+
+**Comparison with Chapter 4 Hardcoded Version:**
+
+| Aspect | Chapter 4 (Hardcoded) | Chapter 6 (ConfigMaps/Secrets) |
+|--------|----------------------|--------------------------------|
+| **Security** | Passwords in plain YAML | Passwords in Secrets |
+| **Flexibility** | Need to edit YAML files | Update ConfigMaps/Secrets |
+| **Environment Support** | Same YAML for all envs | Different configs per env |
+| **Secret Management** | Manual password handling | Kubernetes-managed secrets |
 
 ## Updating Configuration
 
