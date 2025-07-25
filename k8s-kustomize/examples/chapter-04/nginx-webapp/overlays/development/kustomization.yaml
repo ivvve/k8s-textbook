@@ -1,0 +1,42 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: nginx-webapp-development
+
+# Reference the base configuration
+resources:
+  - ../../base
+
+# Development-specific name prefix
+namePrefix: dev-
+
+# Development namespace
+namespace: nginx-webapp-dev
+
+# Additional labels for development
+commonLabels:
+  environment: development
+  tier: development
+
+# Additional annotations
+commonAnnotations:
+  deployment.kubernetes.io/revision: "1"
+  environment: development
+
+# Apply development patches
+patches:
+  - path: dev-patches.yaml
+
+# ConfigMap generator for development-specific config
+configMapGenerator:
+  - name: dev-config
+    literals:
+      - ENVIRONMENT=development
+      - DEBUG_MODE=true
+      - LOG_LEVEL=debug
+
+# Override image tag for development
+images:
+  - name: nginx
+    newTag: "1.21-alpine"

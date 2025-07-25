@@ -1,0 +1,29 @@
+# Patch for development-specific changes
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-webapp
+spec:
+  replicas: 1  # Reduce replicas for development
+  template:
+    spec:
+      containers:
+      - name: nginx
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "25m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+        env:
+        - name: ENVIRONMENT
+          value: "development"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-webapp
+spec:
+  type: NodePort  # Change to NodePort for easy access
